@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="out"></canvas>
+<script src="scene.js"></script>
+<script>
+  let env, acc, outCtx, W, H;
+
+  window.setup = async (w, h) => {
+    W = w; H = h;
+    const faces = [
+      new FontFace('InterDisplay', 'url(fonts/InterDisplay-SemiBold.ttf)', { weight: '600' }),
+      new FontFace('InterText', 'url(fonts/Inter-Regular.ttf)', { weight: '400' }),
+    ];
+    for (const f of faces) { await f.load(); document.fonts.add(f); }
+    await document.fonts.ready;
+
+    const mk = (cw, ch, opts) => {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      return [c, c.getContext('2d', opts)];
+    };
+    const [canvas, ctx] = mk(W, H, { willReadFrequently: true, alpha: false });
+    const [ccanvas, cctx] = mk(W, H);
+    const [gcanvas, gctx] = mk(Math.round(W / 4), Math.round(H / 4));
+    env = { ctx, cctx, gctx, canvas, ccanvas, gcanvas, W, H, field: Scene.makeField() };
+
+    const out = document.getElementById('out');
+    out.width = W; out.height = H;
+    out.style.width = W + 'px'; out.style.height = H + 'px';
+    outCtx = out.getContext('2d');
+    acc = new Float32Array(W * H * 4);
+    return true;
+  };
+
+  // Render frame at time t with `samples` sub-frames spread over `shutter` of a frame (centred).
+  window.frame = (t, fps, samples, shutter) => {
+    acc.fill(0);
+    for (let k = 0; k < samples; k++) {
+      const ts = samples === 1 ? t : t + ((k + 0.5) / samples - 0.5) * (shutter / fps);
+      Scene.render(env, Math.max(0, ts));
+      const d = env.ctx.getImageData(0, 0, W, H).data;
+      for (let i = 0; i < d.length; i++) acc[i] += d[i];
+    }
+    const img = outCtx.createImageData(W, H);
+    const o = img.data, inv = 1 / samples;
+    for (let i = 0; i < o.length; i += 4) {
+      // triangular-PDF dither: kills banding in the dark gradients
+      const n = Math.random() + Math.random() - 1;
+      o[i] = acc[i] * inv + n + 0.5;
+      o[i + 1] = acc[i + 1] * inv + n + 0.5;
+      o[i + 2] = acc[i + 2] * inv + n + 0.5;
+      o[i + 3] = 255;
+    }
+    outCtx.putImageData(img, 0, 0);
+    return true;
+  };
+</script>
+</body>
+</html>
